@@ -1,6 +1,6 @@
 import json
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from typing import Optional, List, Dict, Any
 
@@ -14,6 +14,7 @@ class Comment:
         create_time: str,
         avatar: str,
         total_reply: int,
+        like_count: int = 0,
         replies: Optional[List['Comment']] = []
     ) -> None:
         self._comment_id: str = comment_id
@@ -22,10 +23,11 @@ class Comment:
         self._comment: str = comment
         self._create_time: str = datetime\
             .fromtimestamp(
-                create_time
-            ).strftime("%Y-%m-%dT%H:%M:%S")
+                create_time, tz=timezone.utc
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
         self._avatar: str = avatar
         self._total_reply: int = total_reply
+        self._like_count: int = like_count or 0
         self._replies: List['Comment'] = replies
 
     @property
@@ -69,7 +71,13 @@ class Comment:
         self: 'Comment'
     ) -> int:
         return self._total_reply
-    
+
+    @property
+    def like_count(
+        self: 'Comment'
+    ) -> int:
+        return self._like_count
+
     @property
     def replies(
         self: 'Comment'
@@ -88,6 +96,7 @@ class Comment:
             'create_time': self._create_time,
             'avatar': self._avatar,
             'total_reply': self._total_reply,
+            'like_count': self._like_count,
             'replies': [reply.dict for reply in self._replies]
         }
     
@@ -95,7 +104,7 @@ class Comment:
     def json(
         self: 'Comment'
     ) -> str:
-        return json.dumps(self.json)
+        return json.dumps(self.dict)
     
     def __str__(
         self: 'Comment'

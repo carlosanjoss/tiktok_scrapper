@@ -119,6 +119,9 @@ celerybeat.pid
 # SageMath parsed files
 *.sage.py
 
+# Collection input (may contain links used for research)
+links.txt
+
 # Environments
 .env
 .venv

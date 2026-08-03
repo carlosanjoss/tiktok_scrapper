@@ -1,1 +1,1 @@
-from .tiktokcomment import TiktokComment
+from .tiktokcomment import TiktokComment, extract_aweme_id
