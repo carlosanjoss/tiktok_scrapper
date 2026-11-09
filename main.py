@@ -9,12 +9,18 @@ from typing import Iterable, List, Optional
 from loguru import logger
 
 from tiktokcomment import TiktokComment, extract_aweme_id
+from tiktokcomment.profile_discovery import (
+    ProfileVideoDiscoverer,
+    download_video,
+    extract_profile_username,
+)
 from tiktokcomment.typing import Comments, Comment
 
 __title__ = 'TikTok Comment Scrapper'
 __version__ = '2.1.0'
 
 DEFAULT_LINKS_FILE = 'links.txt'
+DEFAULT_PROFILES_FILE = 'profiles.txt'
 
 
 def resolve_output_dir(output: str) -> str:
@@ -59,6 +65,29 @@ def save_comments(comments: Comments, aweme_id: str, output_dir: str) -> str:
         json.dump(payload, f, ensure_ascii=False, indent=4)
 
     return final_path
+
+
+def save_profile_manifest(
+    profile_url: str,
+    video_urls: List[str],
+    output_dir: str,
+) -> str:
+    username = extract_profile_username(profile_url)
+    if not username:
+        raise ValueError('invalid TikTok profile url: %s' % profile_url)
+    profile_dir = os.path.join(resolve_output_dir(output_dir), 'profiles', username)
+    os.makedirs(profile_dir, exist_ok=True)
+    path = os.path.join(profile_dir, '_profile.json')
+    payload = {
+        'username': username,
+        'profile_url': 'https://www.tiktok.com/@%s' % username,
+        'discovered_at': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'video_count': len(video_urls),
+        'video_urls': video_urls,
+    }
+    with open(path, 'w', encoding='utf-8') as file_obj:
+        json.dump(payload, file_obj, ensure_ascii=False, indent=4)
+    return path
 
 
 def scrape_one(
@@ -106,6 +135,11 @@ def scrape_one(
     help='txt file with one tiktok link/id per line (defaults to links.txt if present)'
 )
 @click.option(
+    "--profiles-file", "-p",
+    default=None,
+    help='txt file with one TikTok profile per line (defaults to profiles.txt if present)'
+)
+@click.option(
     "--output", "-o",
     default='data/',
     help='directory output data'
@@ -121,12 +155,55 @@ def scrape_one(
     default=1.5,
     help='seconds to wait between videos when scraping from a links file'
 )
+@click.option(
+    "--videos-per-profile",
+    default=20,
+    type=click.IntRange(min=1),
+    help='maximum recent videos discovered per profile'
+)
+@click.option(
+    "--profile-scrolls",
+    default=20,
+    type=click.IntRange(min=1),
+    help='maximum scroll rounds used to discover profile videos'
+)
+@click.option(
+    "--profile-delay",
+    default=5.0,
+    type=click.FloatRange(min=0),
+    help='seconds to wait between profiles'
+)
+@click.option(
+    "--headed",
+    is_flag=True,
+    default=False,
+    help='show Chrome during profile discovery (useful for CAPTCHA/login)'
+)
+@click.option(
+    "--discover-only",
+    is_flag=True,
+    default=False,
+    help='discover and save video links without collecting comments'
+)
+@click.option(
+    "--download-videos",
+    is_flag=True,
+    default=False,
+    help='download each discovered video and its metadata into the profile folder'
+)
 def main(
     aweme_id: Optional[str],
     links_file: Optional[str],
+    profiles_file: Optional[str],
     output: str,
     overwrite: bool,
-    delay: float
+    delay: float,
+    videos_per_profile: int,
+    profile_scrolls: int,
+    profile_delay: float,
+    headed: bool,
+    discover_only: bool,
+    download_videos: bool,
 ):
     tiktok: TiktokComment = TiktokComment()
 
@@ -135,6 +212,61 @@ def main(
         if not resolved_id:
             raise ValueError('invalid --aweme_id, example: --aweme_id=7418294751977327878')
         scrape_one(tiktok, resolved_id, output, overwrite=True)
+        return
+
+    if not profiles_file and not links_file and os.path.exists(DEFAULT_PROFILES_FILE):
+        profiles_file = DEFAULT_PROFILES_FILE
+
+    if profiles_file:
+        profiles: List[str] = read_links(profiles_file)
+        if not profiles:
+            logger.warning('%s has no profiles to scrape' % profiles_file)
+            return
+        logger.info('found %d profile(s) in %s' % (len(profiles), profiles_file))
+        with ProfileVideoDiscoverer(headless=not headed) as discoverer:
+            for profile_index, profile_url in enumerate(profiles, start=1):
+                username = extract_profile_username(profile_url)
+                logger.info(
+                    '[profile %d/%d] discovering %s'
+                    % (profile_index, len(profiles), profile_url)
+                )
+                if not username:
+                    logger.warning('invalid profile url, skipping: %s' % profile_url)
+                    continue
+                try:
+                    video_urls = discoverer.discover(
+                        profile_url,
+                        max_videos=videos_per_profile,
+                        max_scrolls=profile_scrolls,
+                    )
+                except Exception as error:
+                    logger.error('failed to discover %s: %s' % (profile_url, error))
+                    continue
+
+                profile_output = os.path.join(resolve_output_dir(output), 'profiles', username)
+                manifest = save_profile_manifest(profile_url, video_urls, output)
+                logger.info('saved profile manifest at %s' % manifest)
+                if discover_only:
+                    continue
+                for video_index, video_url in enumerate(video_urls, start=1):
+                    logger.info(
+                        '[@%s %d/%d] processing %s'
+                        % (username, video_index, len(video_urls), video_url)
+                    )
+                    if download_videos:
+                        try:
+                            download_video(
+                                video_url,
+                                os.path.join(profile_output, 'videos'),
+                                overwrite=overwrite,
+                            )
+                        except Exception as error:
+                            logger.error('failed to download %s: %s' % (video_url, error))
+                    scrape_one(tiktok, video_url, profile_output, overwrite)
+                    if video_index < len(video_urls):
+                        time.sleep(delay)
+                if profile_index < len(profiles):
+                    time.sleep(profile_delay)
         return
 
     if not links_file:

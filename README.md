@@ -3,12 +3,15 @@
 # tiktok-comment-scrapper
 
 ![](https://raw.githubusercontent.com/RomySaputraSihananda/RomySaputraSihananda/main/images/GA-U-u2bsAApmn9.jpeg)
-Get all comments from tiktok video url or id
+Descobre vídeos publicados por perfis do TikTok, coleta os comentários e,
+opcionalmente, baixa os arquivos MP4 e seus metadados.
 
 ## Requirements
 
 - **Python >= 3.11.4**
 - **Requests >= 2.31.0**
+- **yt-dlp** e **curl-cffi** para descobrir e baixar vídeos
+- **Playwright** como alternativa quando a descoberta principal falhar
 
 ## Installation
 
@@ -26,6 +29,8 @@ source venv/bin/activate  # On Windows use `venv\Scripts\activate`
 # Install Requirement
 pip install -r requirements.txt
 ```
+
+No Windows deste projeto, a instalação já está pronta em `.venv`.
 
 ## Example Usages
 
@@ -56,15 +61,62 @@ python main.py --output=data
 
 Each video is saved to `<output>/<aweme_id>.json`. Videos that already have a saved json in the output directory are skipped on re-runs, so a large batch can be stopped and resumed safely; pass `--overwrite` to force re-collecting them. `--delay` controls the wait (in seconds) between videos to avoid getting rate-limited.
 
+### Perfis: vídeos e comentários
+
+O arquivo `profiles.txt` já contém os perfis importados da planilha. Para cada
+perfil, coletar os 20 vídeos mais recentes e seus comentários:
+
+```sh
+.venv\Scripts\python.exe main.py --videos-per-profile 20 --output data
+```
+
+Para também baixar os MP4 e o JSON de metadados de cada vídeo:
+
+```sh
+.venv\Scripts\python.exe main.py --videos-per-profile 20 --download-videos --output data
+```
+
+Para testar primeiro apenas a descoberta, sem comentários nem download:
+
+```sh
+.venv\Scripts\python.exe main.py --videos-per-profile 3 --discover-only --output data
+```
+
+O processamento pode ser interrompido e retomado. Comentários já salvos e
+vídeos já baixados são reutilizados; use `--overwrite` para refazer. A estrutura
+gerada é:
+
+```text
+data/
+  profiles/
+    usuario/
+      _profile.json
+      1234567890.json
+      videos/
+        1234567890.mp4
+        1234567890.info.json
+```
+
+O TikTok pode limitar requisições. Use `--delay` entre vídeos e
+`--profile-delay` entre perfis. Se a descoberta principal falhar, o programa
+tenta o navegador local; `--headed` deixa essa janela visível para eventual
+login ou CAPTCHA.
+
 ### Flags
 
-| Flag           | Alias |                   Description                     | Example                     |   Default   |
-| :------------- | :---: | :------------------------------------------------: | :--------------------------- | :---------: |
-| --aweme_id     |       |     Url or video id of a single tiktok video        | --aweme_id=id or url         |     -       |
-| --links-file   |  -l   |  txt file with one link/id per line for batch runs  | --links-file=links.txt       |  links.txt  |
-| --output       |  -o   |                json file output path                | --output=data                |    data     |
-| --overwrite    |       |      re-collect videos already saved on disk        | --overwrite                  |    False    |
-| --delay        |       |    seconds between videos in a batch collection     | --delay=2                    |     1.5     |
+| Flag | Alias | Description | Default |
+| :--- | :---: | :--- | :---: |
+| `--aweme_id` | | URL ou ID de um único vídeo | - |
+| `--links-file` | `-l` | Arquivo com URLs/IDs de vídeos | `links.txt` |
+| `--profiles-file` | `-p` | Arquivo com URLs de perfis | `profiles.txt` |
+| `--videos-per-profile` | | Máximo de vídeos recentes por perfil | `20` |
+| `--download-videos` | | Baixa MP4 e metadados dos vídeos | falso |
+| `--discover-only` | | Salva somente a lista de vídeos descobertos | falso |
+| `--headed` | | Exibe o navegador usado como alternativa | falso |
+| `--output` | `-o` | Diretório de saída | `data` |
+| `--overwrite` | | Refaz itens já salvos | falso |
+| `--delay` | | Segundos entre vídeos | `1.5` |
+| `--profile-delay` | | Segundos entre perfis | `5` |
 
 ## Sample Output
 

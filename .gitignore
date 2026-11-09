@@ -121,6 +121,8 @@ celerybeat.pid
 
 # Collection input (may contain links used for research)
 links.txt
+data/browser_profile/
+data/debug/
 
 # Environments
 .env
